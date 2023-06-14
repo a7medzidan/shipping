@@ -1,0 +1,143 @@
+<?php
+
+namespace App\Http\Controllers\Admin\Reports;
+
+use App\Http\Controllers\Controller;
+use App\Http\Traits\LogActivityTrait;
+use App\Models\Delivery;
+use App\Models\Order;
+use App\Models\Trader;
+use Illuminate\Http\Request;
+use Yajra\DataTables\DataTables;
+
+class TraderReportsController extends Controller
+{
+    use LogActivityTrait;
+
+    function __construct()
+    {
+        $this->middleware('permission:عرض التقارير', ['only' => ['index']]);
+    }
+
+
+    public function index(Request $request)
+    {
+
+        $traders=Trader::get();
+
+        $shipment_pieces_number=0;
+
+        if ($request->ajax()) {
+            $rows = Order::query()->latest()->with(['province','trader','delivery']);
+
+            if ($request->fromDate){
+                $rows->where('delivery_time','>=',$request->fromDate.' '.'00:00:00');
+            }
+            if ($request->toDate){
+                $rows->where('delivery_time','<=',$request->toDate.' '.'23:59:59');
+
+            }
+            if ($request->trader_id){
+                $rows->where('trader_id',$request->delivery_id);
+            }
+            if ($request->status){
+                $rows->where('status',$request->status);
+
+            }
+
+
+
+            $dataTable= DataTables::of($rows)
+
+
+
+                ->editColumn('province_id', function ($row) {
+                    return $row->province->title??'';
+                })
+
+
+                ->editColumn('delivery_id', function ($row) {
+                    return $row->delivery->name??'';
+                })
+                ->addColumn('orderDetails', function ($row) {
+                    $url=route('admin.orderDetails',$row->id);
+                    return "<a href='$url' class='btn btn-outline-dark'>تفاصيل الطلب</a>";
+                })
+
+
+                ->editColumn('status', function ($row) {
+
+                    $status='';
+                    if ($row->status=='new')
+                        $status= 'طلب جديد';
+                    elseif ($row->status=='converted_to_delivery')
+                        $status='طلب محول الي المندوب';
+                    elseif ($row->status=='total_delivery_to_customer')
+                        $status='طلب مسلم كليا';
+                    elseif ($row->status=='partial_delivery_to_customer')
+                        $status='طلب مسلم جزئيا';
+                    elseif ($row->status=='not_delivery')
+                        $status='طلب لم يسلم';
+                    else
+                        $status='لم يحدد';
+
+                    return $status;
+
+                })
+
+                ->editColumn('address', function ($data) {
+                    $link = "https://www.google.com/maps/search/?api=1&query=".$data->latitude.",".$data->longitude;
+                    return '<a target="_blank" class="btn btn-pill btn-info" href="'.$link.'"> عرض <i class="fa fa-map-marker-alt text-white"></i>  </a>';
+                })
+                ->editColumn('trader_id', function ($row) {
+                    return  $row->trader->name??'';
+                })
+
+
+
+
+                ->editColumn('created_at', function ($admin) {
+                    return date('Y/m/d', strtotime($admin->created_at));
+                })
+                ->escapeColumns([])
+                ->make(true);
+
+
+            return  $dataTable ;
+
+        }
+        else{
+            $this->add_log_activity(null, auth('admin')->user(), "تم عرض  تقارير التجار  ");
+
+        }
+
+        $rows = Order::query()->latest()->with(['province','trader','delivery']);
+
+        if ($request->fromDate){
+            $rows->where('delivery_time','>=',$request->fromDate.' '.'00:00:00');
+        }
+        if ($request->toDate){
+            $rows->where('delivery_time','<=',$request->toDate.' '.'23:59:59');
+
+        }
+        if ($request->trader_id){
+            $rows->where('trader_id',$request->trader_id);
+        }
+        if ($request->status){
+            $rows->where('status',$request->status);
+
+        }
+        $shipment_pieces_number=$rows->sum('shipment_pieces_number');
+        $shipment_value=$rows->sum('shipment_value');
+        $delivery_value=$rows->sum('delivery_value');
+        $total_value=$rows->sum('total_value');
+        $delivery_ratio=$rows->sum('delivery_ratio');
+        $delivery_ratio_val=$delivery_ratio*$total_value/100;
+
+        return view('Admin.reports.traders.index',compact('request','traders','shipment_pieces_number','shipment_value','delivery_value','total_value','delivery_ratio','delivery_ratio_val'));
+
+    }
+
+
+
+}
